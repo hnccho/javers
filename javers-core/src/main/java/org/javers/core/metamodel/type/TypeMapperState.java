@@ -4,14 +4,15 @@ import java.util.Optional;
 import org.javers.common.exception.JaversException;
 import org.javers.common.exception.JaversExceptionCode;
 import org.javers.common.reflection.ReflectionUtil;
+import org.javers.common.validation.Validate;
 import org.javers.core.metamodel.clazz.ClientsClassDefinition;
 import java.lang.reflect.Type;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import static org.javers.common.reflection.ReflectionUtil.extractClass;
 import static org.javers.common.validation.Validate.argumentIsNotNull;
 import static org.javers.common.validation.Validate.argumentsAreNotNull;
@@ -22,6 +23,8 @@ import static org.javers.common.validation.Validate.argumentsAreNotNull;
  * @author bartosz.walacik
  */
 class TypeMapperState {
+    private static final Logger logger = LoggerFactory.getLogger(TypeMapperState.class);
+
     private final Map<String, JaversType> mappedTypes = new ConcurrentHashMap<>();
     private final Map<DuckType, Class> mappedTypeNames = new ConcurrentHashMap<>();
     private final TypeFactory typeFactory;
@@ -68,7 +71,7 @@ class TypeMapperState {
     }
 
     boolean contains(Type javaType){
-        return mappedTypes.containsKey(javaType.toString());
+        return getFromMap(javaType) != null;
     }
 
     JaversType getJaversType(Type javaType) {
@@ -90,8 +93,11 @@ class TypeMapperState {
         computeIfAbsent(javaType, ignored -> jType);
     }
 
-    void computeIfAbsent(final ClientsClassDefinition def) {
-        computeIfAbsent(def.getBaseJavaClass(), ignored -> typeFactory.create(def));
+    void register(final ClientsClassDefinition def) {
+        Type javaType = def.getBaseJavaClass();
+        JaversType newType = typeFactory.create(def);
+
+        addFullMapping(javaType, newType);
     }
 
     //synchronizes on map Key (javaType) only for map writes
@@ -108,30 +114,13 @@ class TypeMapperState {
 
             addFullMapping(javaType, newType);
 
-            inferIdPropertyTypeForEntityIfNeed(newType);
-
             return newType;
         }
     }
 
-    /**
-     * if type of given id-property is not already mapped, maps it as ValueType
-     * <p/>
-     * must be called within synchronized block
-     */
-    private void inferIdPropertyTypeForEntityIfNeed(JaversType jType) {
-        argumentIsNotNull(jType);
-        if (jType instanceof EntityType) {
-            EntityType entityType = (EntityType) jType;
-            Type idType = entityType.getIdPropertyGenericType();
-            addFullMapping(idType, typeFactory.inferIdPropertyTypeAsValue(idType));
-        }
-    }
-
-    /**
-     * must be called within synchronized block
-     */
     private void addFullMapping(Type javaType, JaversType newType){
+        Validate.argumentsAreNotNull(javaType, newType);
+
         putToMap(javaType, newType);
 
         if (newType instanceof ManagedType){
@@ -139,6 +128,25 @@ class TypeMapperState {
             mappedTypeNames.put(new DuckType(managedType.getName()), ReflectionUtil.extractClass(javaType));
             mappedTypeNames.put(new DuckType(managedType), ReflectionUtil.extractClass(javaType));
         }
+
+        if (newType instanceof EntityType) {
+            inferIdPropertyTypeForEntity((EntityType) newType);
+        }
+    }
+
+    /**
+     * maps a type of given Entity's id-property as ValueType
+     * (unless it's a nested Id Entity)
+     */
+    private void inferIdPropertyTypeForEntity(EntityType entityType) {
+        Type idType = entityType.getIdPropertyGenericType();
+
+        computeIfAbsent(idType, (it) -> {
+           if (typeFactory.inferredAsEntity(idType))  {
+               return typeFactory.infer(it);
+           }
+           return typeFactory.inferIdPropertyTypeAsValue(it);
+        });
     }
 
     /**
@@ -146,39 +154,33 @@ class TypeMapperState {
      */
     private JaversType infer(Type javaType) {
         argumentIsNotNull(javaType);
-        JaversType prototype = findNearestAncestor(javaType);
-        JaversType newType = typeFactory.infer(javaType, Optional.ofNullable(prototype));
-
-        return newType;
+        return typeFactory.infer(javaType, findPrototype(javaType));
     }
 
-    private JaversType findNearestAncestor(Type javaType) {
+    private Optional<JaversType> findPrototype(Type javaType) {
         Class javaClass = extractClass(javaType);
-        List<DistancePair> distances = new ArrayList<>();
 
-        for (JaversType javersType : mappedTypes.values()) {
-            DistancePair distancePair = new DistancePair(javaClass, javersType);
-
-            //this is due too spoiled Java Array reflection API
-            if (javaClass.isArray()) {
-                return getJaversType(Object[].class);
-            }
-
-            //just to better speed
-            if (distancePair.getDistance() == 0) {
-                return distancePair.getJaversType();
-            }
-
-            distances.add(distancePair);
+        //this is due too spoiled Java Array reflection API
+        if (javaClass.isArray()) {
+            return Optional.of(getJaversType(Object[].class));
         }
 
-        Collections.sort(distances);
-
-        if (distances.get(0).isMax()) {
-            return null;
+        JaversType selfClassType = getFromMap(javaClass);
+        if (selfClassType != null && javaClass != javaType){
+            return  Optional.of(selfClassType); //returns rawType for ParametrizedTypes
         }
 
-        return distances.get(0).getJaversType();
+        List<Type> hierarchy = ReflectionUtil.calculateHierarchyDistance(javaClass);
+
+        for (Type parent : hierarchy) {
+            JaversType jType = getFromMap(parent);
+            if (jType != null && jType.canBePrototype()) {
+                logger.debug("proto for {} -> {}", javaType, jType);
+                return Optional.of(jType);
+            }
+        }
+
+        return Optional.empty();
     }
 
     private Optional<? extends Class> parseClass(String qualifiedName){

@@ -7,13 +7,15 @@ buildscript {
 
     dependencies {
         classpath 'org.springframework.build.gradle:propdeps-plugin:0.0.7'
-        classpath 'pl.allegro.tech.build:axion-release-plugin:0.9.5'
         classpath 'com.bmuschko:gradle-nexus-plugin:2.3.1'
-        classpath 'io.codearte.gradle.nexus:gradle-nexus-staging-plugin:0.5.3'
+        classpath 'io.codearte.gradle.nexus:gradle-nexus-staging-plugin:0.8.0'
     }
 }
 
-apply plugin: 'axion-release'
+plugins {
+    id 'pl.allegro.tech.build.axion-release' version '1.7.1'
+}
+
 apply plugin: 'io.codearte.nexus-staging'
 
 scmVersion {
@@ -23,7 +25,7 @@ scmVersion {
 }
 
 subprojects {
-   // apply plugin: 'maven'
+    apply plugin: 'maven-publish'
     apply plugin: 'java'
     apply plugin: 'groovy'
     apply plugin: 'propdeps'
@@ -51,6 +53,13 @@ subprojects {
 
     javadoc {
         options.noTimestamp()
+    }
+
+    test {
+        testLogging {
+            exceptionFormat = 'full'
+            events 'failed'
+        }
     }
 
     task example(dependsOn: 'cleanTest') {
@@ -116,15 +125,23 @@ subprojects {
         testLogging.exceptionFormat = 'full'
         testLogging.showStackTraces = true
     }
+
+    publishing {
+        publications {
+            libraryJar(MavenPublication) {
+                from components.java
+            }
+        }
+    }
 }
 
 //io.codearte.gradle
 nexusStaging {
     packageGroup = 'org.javers'
-    numberOfRetries = 10
+    numberOfRetries = 20
     delayBetweenRetriesInMillis = 3000
 }
 
 task wrapper(type: Wrapper) {
-    gradleVersion = '3.4.1'
+    gradleVersion = '4.6'
 }

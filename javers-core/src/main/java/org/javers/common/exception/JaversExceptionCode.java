@@ -6,13 +6,15 @@ package org.javers.common.exception;
  * @author Pawel Cierpiatka <pawel.cierpiatka@gmail.com>
  */
 public enum JaversExceptionCode {
-    CLASS_EXTRACTION_ERROR(JaversException.BOOTSTRAP_ERROR + "Don't know how to extract Class from type '%s'.") ,
+    CLASS_EXTRACTION_ERROR(JaversException.BOOTSTRAP_ERROR + "Can't extract Class from Type '%s'.") ,
 
     COMMITTING_TOP_LEVEL_VALUES_NOT_SUPPORTED("Committing top-level %ss like '%s' is not supported. You can commit only Entity or ValueObject instance."),
 
     COMPARING_TOP_LEVEL_VALUES_NOT_SUPPORTED("Comparing top-level %ss like '%s' is not supported. Javers.compare() is designed to deeply compare two arbitrary complex object graphs. For simple values, equals() does the job."),
 
     ENTITY_WITHOUT_ID ("Class '%s' mapped as Entity has no Id property. Use @Id annotation to mark unique and not-null Entity identifier"),
+
+    SHALLOW_REF_ENTITY_WITHOUT_ID ("Class '%s' mapped as ShallowReference Entity has no Id property. Use @Id annotation to mark unique and not-null Entity identifier"),
 
     ENTITY_INSTANCE_WITH_NULL_ID("Found Entity instance '%s' with null idProperty '%s'"),
 
@@ -28,6 +30,10 @@ public enum JaversExceptionCode {
 
     PROPERTY_ACCESS_ERROR("error getting value from property '%s' on target object of type '%s', cause: %s"),
 
+    PROPERTY_SETTING_ERROR("error setting '%s' value to property '%s', cause: %s"),
+
+    SETTER_INVOCATION_ERROR("error invoking setter '%s' on target object of type '%s', cause: %s"),
+
     CONTAINER_NOT_READY(JaversException.BOOTSTRAP_ERROR +"pico container is not ready"),
 
     AFFECTED_CDO_IS_NOT_AVAILABLE("affected cdo is not available, you can access it only for freshly generated diffs"),
@@ -36,6 +42,8 @@ public enum JaversExceptionCode {
 
     NOT_IMPLEMENTED("not implemented"),
 
+    IGNORED_AND_INCLUDED_PROPERTIES_MIX("Mapping error in class '%s'. You can either specify Included Properties or Ignored Properties, not both."),
+
     SNAPSHOT_NOT_FOUND("snapshot '%s' not found in JaversRepository"),
 
     //graph & snapshot
@@ -43,7 +51,9 @@ public enum JaversExceptionCode {
 
     SNAPSHOT_STATE_VIOLATION("snapshots are immutable"),
 
-    PROPERTY_NOT_FOUND("property '%s' not found in class '%s'"),
+    PROPERTY_NOT_FOUND("Property '%s' not found in class '%s'. If the name is correct - check annotations. Properties with @DiffIgnore or @Transient are not visible for JaVers."),
+
+    SETTER_NOT_FOUND("setter for getter '%s' not found in class '%s'"),
 
     /** @since 1.4 */
     TYPE_NAME_NOT_FOUND(
@@ -53,6 +63,8 @@ public enum JaversExceptionCode {
             "using JaversBuilder.withPackagesToScan(String) or JaversBuilder.scanTypeName(Class)"),
 
     MANAGED_CLASS_MAPPING_ERROR("given javaClass '%s' is mapped to %s, expected %s"),
+
+    CLASS_MAPPING_ERROR("given javaClass '%s' is mapped to %s, expected %s"),
 
     MALFORMED_CHANGE_TYPE_FIELD("no such Change type - '%s'"),
 

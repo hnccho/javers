@@ -64,29 +64,14 @@ class ReflectionUtilTest extends Specification {
         instance instanceof ReflectionTestClass
     }
 
-    @Unroll
-    def "should calculate hierarchy distance from #child to #parent"() {
-        when:
-        int d = ReflectionUtil.calculateHierarchyDistance(child, parent)
-
-        then:
-        d == expectedDistance
-
-        where:
-        child   | parent      || expectedDistance
-        HashMap | Map         || 1
-        HashMap | HashMap     || 0
-        Map     | Map         || 0
-        HashMap | AbstractMap || 1
-        HashMap | Object      || 2
-        Map     | Set         || Integer.MAX_VALUE
-
+    def "should calculate hierarchy distance as follows (parents first, interfaces last)"() {
+        expect:
+        ReflectionUtil.calculateHierarchyDistance(HashMap) == [AbstractMap, Map, Cloneable, Serializable]
     }
 
     def "should get all methods from a given class without inheritance duplicates"(){
         when:
-        def methods = ReflectionUtil.getAllMethods(ReflectionTestClass)
-                .findAll{it.declaringClass != Object}
+        def methods = ReflectionUtil.getAllGetters(ReflectionTestClass)
 
         methods.each { println it }
 
@@ -104,7 +89,7 @@ class ReflectionUtilTest extends Specification {
 
         where:
         memberType | action
-        "Method"   | { ReflectionUtil.getAllMethods(ConcreteWithActualType).find{it.name() == "getValue"} }
+        "Method"   | { ReflectionUtil.getAllGetters(ConcreteWithActualType).find{it.name() == "getValue"} }
         "Field"    | { ReflectionUtil.getAllFields(ConcreteWithActualType).find{it.name() == "value"} }
     }
 
@@ -118,7 +103,7 @@ class ReflectionUtilTest extends Specification {
 
         where:
         memberType | action
-        "Method"   | { ReflectionUtil.getAllMethods(ConcreteIdentified).find{it.name() == "getId"} }
+        "Method"   | { ReflectionUtil.getAllGetters(ConcreteIdentified).find{it.name() == "getId"} }
         "Field"    | { ReflectionUtil.getAllFields(ConcreteIdentified).find{it.name() == "id"} }
     }
 }

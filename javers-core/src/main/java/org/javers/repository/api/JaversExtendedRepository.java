@@ -1,7 +1,7 @@
 package org.javers.repository.api;
 
 import org.javers.common.collections.Lists;
-import java.util.Optional;
+import org.javers.common.string.ToStringBuilder;
 import org.javers.core.commit.Commit;
 import org.javers.core.commit.CommitId;
 import org.javers.core.diff.Change;
@@ -9,11 +9,17 @@ import org.javers.core.diff.changetype.PropertyChange;
 import org.javers.core.json.JsonConverter;
 import org.javers.core.metamodel.object.CdoSnapshot;
 import org.javers.core.metamodel.object.GlobalId;
+import org.javers.core.metamodel.object.InstanceId;
 import org.javers.core.metamodel.type.EntityType;
+import org.javers.core.metamodel.type.JaversType;
 import org.javers.core.metamodel.type.ManagedType;
 import org.javers.core.snapshot.SnapshotDiffer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static org.javers.common.validation.Validate.argumentIsNotNull;
 import static org.javers.common.validation.Validate.argumentsAreNotNull;
@@ -66,30 +72,64 @@ public class JaversExtendedRepository implements JaversRepository {
     @Override
     public List<CdoSnapshot> getStateHistory(GlobalId globalId, QueryParams queryParams) {
         argumentsAreNotNull(globalId, queryParams);
-        return delegate.getStateHistory(globalId, queryParams);
+
+        List<CdoSnapshot> snapshots = delegate.getStateHistory(globalId, queryParams);
+
+        if (globalId instanceof InstanceId && queryParams.isAggregate()) {
+            return loadMasterEntitySnapshotIfNecessary((InstanceId) globalId, snapshots);
+        } else {
+            return snapshots;
+        }
     }
 
     @Override
     public List<CdoSnapshot> getValueObjectStateHistory(EntityType ownerEntity, String path, QueryParams queryParams) {
         argumentsAreNotNull(ownerEntity, path, queryParams);
+
         return delegate.getValueObjectStateHistory(ownerEntity, path, queryParams);
     }
 
     @Override
     public Optional<CdoSnapshot> getLatest(GlobalId globalId) {
         argumentIsNotNull(globalId);
+
         return delegate.getLatest(globalId);
+    }
+
+    /**
+     * last snapshot with commitId <= given timePoint
+     */
+    public List<CdoSnapshot> getHistoricals(GlobalId globalId, CommitId timePoint, boolean withChildValueObjects, int limit) {
+        argumentsAreNotNull(globalId, timePoint);
+
+        return delegate.getStateHistory(globalId, QueryParamsBuilder
+                        .withLimit(limit)
+                        .withChildValueObjects(withChildValueObjects)
+                        .toCommitId(timePoint)
+                        .build());
+    }
+
+    /**
+     * last snapshot with commitId <= given date
+     */
+    public Optional<CdoSnapshot> getHistorical(GlobalId globalId, LocalDateTime timePoint) {
+        argumentsAreNotNull(globalId, timePoint);
+
+        return delegate.getStateHistory(globalId, QueryParamsBuilder.withLimit(1).to(timePoint).build())
+                .stream().findFirst();
     }
 
     @Override
     public List<CdoSnapshot> getSnapshots(QueryParams queryParams) {
         argumentsAreNotNull(queryParams);
+
         return delegate.getSnapshots(queryParams);
     }
 
     @Override
     public List<CdoSnapshot> getSnapshots(Collection<SnapshotIdentifier> snapshotIdentifiers) {
         argumentIsNotNull(snapshotIdentifiers);
+
         return delegate.getSnapshots(snapshotIdentifiers);
     }
 
@@ -132,5 +172,18 @@ public class JaversExtendedRepository implements JaversRepository {
 
     private List<Change> getChangesIntroducedBySnapshots(List<CdoSnapshot> snapshots) {
         return snapshotDiffer.calculateDiffs(snapshots, previousSnapshotsCalculator.calculate(snapshots));
+    }
+
+    //required for the corner case, when valueObject snapshots consume all the limit
+    private List<CdoSnapshot> loadMasterEntitySnapshotIfNecessary(InstanceId instanceId, List<CdoSnapshot> alreadyLoaded) {
+        if (alreadyLoaded.stream().filter(s -> s.getGlobalId().equals(instanceId)).findFirst().isPresent()) {
+            return alreadyLoaded;
+        }
+
+        return getLatest(instanceId).map(it -> {
+            List<CdoSnapshot> enhanced = new ArrayList(alreadyLoaded);
+            enhanced.add(it);
+            return java.util.Collections.unmodifiableList(enhanced);
+        }).orElse(alreadyLoaded);
     }
 }

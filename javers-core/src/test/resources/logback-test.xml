@@ -8,6 +8,8 @@
         </encoder>
     </appender>
 
+    <logger name="org.javers.JQL" level="DEBUG"/>
+
     <root level="info">
         <appender-ref ref="STDOUT" />
     </root>

@@ -1,5 +1,6 @@
 package org.javers.common.reflection;
 
+import org.javers.common.collections.Sets;
 import org.javers.common.validation.Validate;
 
 import java.lang.annotation.Annotation;
@@ -24,14 +25,21 @@ import java.util.Set;
 public abstract class JaversMember<T extends Member> {
     private final T rawMember; //delegate
     private final Optional<Type> resolvedReturnType;
+    private final boolean looksLikeId;
 
     /**
      * @param resolvedReturnType nullable
      */
-    public JaversMember(T rawMember, Type resolvedReturnType) {
+    protected JaversMember(T rawMember, Type resolvedReturnType) {
+        this(rawMember, resolvedReturnType, ReflectionUtil.looksLikeId(rawMember));
+    }
+
+    protected JaversMember(final T rawMember, final Type resolvedReturnType, final boolean looksLikeId) {
         Validate.argumentIsNotNull(rawMember);
         this.rawMember = rawMember;
         this.resolvedReturnType = Optional.ofNullable(resolvedReturnType);
+        this.looksLikeId = looksLikeId;
+        setAccessibleIfNecessary(rawMember);
     }
 
     protected abstract Type getRawGenericType();
@@ -61,29 +69,30 @@ public abstract class JaversMember<T extends Member> {
         return rawMember.getName();
     }
 
-    public boolean hasAnyAnnotation(Set<String> annotationNames){
-        return findFirst(annotationNames).isPresent();
+    public Set<Annotation> getAnnotations() {
+        return ReflectionUtil.getAnnotations(rawMember);
     }
 
-    public Optional<Annotation> findFirst(Set<String> annotationNames) {
-        return ReflectionUtil.findFirst((AccessibleObject) rawMember, annotationNames);
+    public Set<Class<? extends Annotation>> getAnnotationTypes() {
+        return Sets.transform(getAnnotations(), ann -> ann.annotationType());
     }
 
-    public Optional<String> getFirstValue(Set<String> annotationNames) {
-        return findFirst(annotationNames).map(a -> ReflectionUtil.getAnnotationValue(a, "value"));
+    public boolean looksLikeId() {
+        return looksLikeId;
     }
 
-    public abstract Object invokeEvenIfPrivate(Object target);
+    public abstract Object getEvenIfPrivate(Object target);
 
-    protected void setAccessibleIfNecessary() {
-        if(!isPublic(rawMember))
-        {
+    public abstract void setEvenIfPrivate(Object target, Object value);
+
+    void setAccessibleIfNecessary(Member rawMember) {
+        if(!isPublic(rawMember)) {
             ((AccessibleObject)rawMember).setAccessible(true); //that's Java Reflection API ...
         }
     }
 
     private boolean isPublic(Member member){
-        return Modifier.isPublic(member.getModifiers());
+        return Modifier.isPublic(member.getModifiers()) && Modifier.isPublic(member.getDeclaringClass().getModifiers());
     }
 
     @Override

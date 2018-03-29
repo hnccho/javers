@@ -1,148 +1,179 @@
 package org.javers.repository.api;
 
-import java.util.Optional;
+import org.javers.common.string.ToStringBuilder;
+import org.javers.core.metamodel.object.SnapshotType;
+import org.javers.repository.jql.QueryBuilder;
+
+import java.util.*;
+
 import org.javers.core.commit.CommitId;
 import java.time.LocalDateTime;
-
-import java.util.Collections;
-import java.util.Map;
 
 /**
  * Container for additional query parameters
  * used for filtering Snapshots to be fetched from database.
- * <br/>
- *
- * Query parameters can't affect query semantic
- * as they are used by all types of queries.
  *
  * @see QueryParamsBuilder
- *
  * @author michal wesolowski
  */
 public class QueryParams {
     private final int limit;
     private final int skip;
-    private final Optional<LocalDateTime> from;
-    private final Optional<LocalDateTime> to;
-    private final Optional<CommitId> commitId;
-    private final Optional<Long> version;
-    private final Optional<String> author;
-    private final Optional<Map<String, String>> commitProperties;
+    private final LocalDateTime from;
+    private final LocalDateTime to;
+    private final CommitId toCommitId;
+    private final Set<CommitId> commitIds;
+    private final Long version;
+    private final String author;
+    private final Map<String, String> commitProperties;
     private final boolean aggregate;
     private final boolean newObjectChanges;
-    private final Optional<String> changedProperty;
+    private final String changedProperty;
+    private final SnapshotType snapshotType;
 
-    QueryParams(int limit, int skip, LocalDateTime from, LocalDateTime to, CommitId commitId, Long version, String author, Map<String, String> commitProperties, boolean aggregate, boolean newObjectChanges, String changedProperty) {
+    QueryParams(int limit, int skip, LocalDateTime from, LocalDateTime to, Set<CommitId> commitIds, Long version, String author, Map<String, String> commitProperties, boolean aggregate, boolean newObjectChanges, String changedProperty, CommitId toCommitId, SnapshotType snapshotType) {
         this.limit = limit;
         this.skip = skip;
-        this.from = Optional.ofNullable(from);
-        this.to = Optional.ofNullable(to);
-        this.commitId = Optional.ofNullable(commitId);
-        this.version = Optional.ofNullable(version);
-        this.author = Optional.ofNullable(author);
-        this.commitProperties = Optional.ofNullable(commitProperties);
+        this.from = from;
+        this.to = to;
+        this.commitIds = commitIds;
+        this.version = version;
+        this.author = author;
+        this.commitProperties = commitProperties;
         this.aggregate = aggregate;
         this.newObjectChanges = newObjectChanges;
-        this.changedProperty = Optional.ofNullable(changedProperty);
+        this.changedProperty = changedProperty;
+        this.toCommitId = toCommitId;
+        this.snapshotType = snapshotType;
     }
 
+    public static QueryParams forShadowQuery(QueryParams q) {
+        return new QueryParams(
+            q.limit, q.skip, q.from, q.to, q.commitIds, q.version, q.author, q.commitProperties,
+            true, q.newObjectChanges, q.changedProperty, q.toCommitId, q.snapshotType);
+    }
+
+    /**
+     * @see QueryBuilder#limit(int)
+     */
     public int limit() {
         return limit;
     }
 
     /**
-     * skips a given number of latest snapshots
+     * @see QueryBuilder#skip(int)
      */
     public int skip() {
         return skip;
     }
 
-    public boolean hasDates() {
-        return from.isPresent() || to.isPresent();
-    }
-
-    public boolean isDateInRange(LocalDateTime date) {
-        if (from.isPresent() && from.get().isAfter(date)){
-            return false;
-        }
-        if (to.isPresent() && to.get().isBefore(date)){
-            return false;
-        }
-
-        return true;
-    }
-
     /**
-     * filters results to Snapshots created after given util
+     * @see QueryBuilder#from(LocalDateTime)
      */
     public Optional<LocalDateTime> from() {
-        return from;
+        return Optional.ofNullable(from);
     }
 
     /**
-     * filters results to Snapshots created before given util
+     * @see QueryBuilder#to(LocalDateTime)
      */
     public Optional<LocalDateTime> to() {
-        return to;
+        return Optional.ofNullable(to);
     }
 
     /**
-     * filters results to Snapshots with a given commitId
+     * @see QueryBuilder#toCommitId(CommitId)
      */
-    public Optional<CommitId> commitId() {
-        return commitId;
+    public Optional<CommitId> toCommitId() {
+        return Optional.ofNullable(toCommitId);
     }
 
     /**
-     * filters results to Snapshots with all given commit properties
+     * @see QueryBuilder#withCommitIds(Collection)
+     */
+    public Set<CommitId> commitIds() {
+        return Collections.unmodifiableSet(commitIds);
+    }
+
+    /**
+     * @see QueryBuilder#withCommitProperty(String, String)
      */
     public Map<String, String> commitProperties() {
-        return commitProperties.isPresent() ?
-            commitProperties.get() : Collections.<String, String>emptyMap();
+        return commitProperties != null ?
+            commitProperties : Collections.emptyMap();
     }
 
     /**
-     * filters results to Snapshots with a given property on changed properties list
+     * @see QueryBuilder#withChangedProperty(String)
      */
     public Optional<String> changedProperty(){
-        return changedProperty;
+        return Optional.ofNullable(changedProperty);
     }
 
     /**
-     * filters results to Snapshots with a given version
+     * @see QueryBuilder#withVersion(long)
      */
     public Optional<Long> version() {
-        return version;
+        return Optional.ofNullable(version);
     }
 
     /**
-     * filters results to Snapshots committed by a given author
+     * @see QueryBuilder#byAuthor(String)
      */
     public Optional<String> author() {
-        return author;
+        return Optional.ofNullable(author);
     }
 
     /**
-     * When enabled, selects all ValueObjects owned by selected Entities.
+     * @see QueryBuilder#withChildValueObjects()
      */
     public boolean isAggregate() {
         return aggregate;
     }
 
+    /**
+     * @see QueryBuilder#withSnapshotType(SnapshotType)
+     */
+    public Optional<SnapshotType> snapshotType() {
+        return Optional.ofNullable(snapshotType);
+    }
+
+    /**
+     * @see QueryBuilder#withNewObjectChanges(boolean)
+     */
     public boolean newObjectChanges() {
         return newObjectChanges;
     }
 
     @Override
     public String toString() {
-        return "QueryParams{" +
-                "limit=" + limit +
-                ", skip=" + skip +
-                ", from=" + from +
-                ", to=" + to +
-                ", commitId=" + commitId +
-                ", commitProperties=" + commitProperties +
-                ", version=" + version +
-                "}";
+        return ToStringBuilder.toString(this,
+                "aggregate", aggregate,
+                "from", from,
+                "to", to,
+                "toCommitId", toCommitId,
+                "commitIds", commitIds,
+                "changedProperty", changedProperty,
+                "version", version,
+                "author", author,
+                "newObjectChanges", newObjectChanges,
+                "snapshotType", snapshotType,
+                "limit", limit,
+                "skip", skip);
+    }
+
+    public boolean hasDates() {
+        return from().isPresent() || to().isPresent();
+    }
+
+    public boolean isDateInRange(LocalDateTime date) {
+        if (from().isPresent() && from().get().isAfter(date)){
+            return false;
+        }
+        if (to().isPresent() && to().get().isBefore(date)){
+            return false;
+        }
+
+        return true;
     }
 }

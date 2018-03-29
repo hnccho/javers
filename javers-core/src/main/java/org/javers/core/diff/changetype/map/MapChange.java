@@ -1,15 +1,13 @@
 package org.javers.core.diff.changetype.map;
 
 import org.javers.common.collections.Lists;
+import org.javers.common.string.PrettyValuePrinter;
 import org.javers.common.validation.Validate;
 import org.javers.core.commit.CommitMetadata;
 import org.javers.core.diff.changetype.PropertyChange;
 import org.javers.core.metamodel.object.GlobalId;
 
 import java.util.*;
-import java.util.function.Predicate;
-
-import static org.javers.common.string.ToStringBuilder.addEnumField;
 
 /**
  * @author bartosz walacik
@@ -49,14 +47,14 @@ public class MapChange extends PropertyChange {
     }
 
     @Override
-    protected String fieldsToString() {
+    protected String fieldsToString(PrettyValuePrinter valuePrinter) {
         StringBuilder changesAsString = new StringBuilder();
 
         for (EntryChange c : changes){
-            if (changesAsString.length() > 0) { changesAsString.append(", "); }
-            changesAsString.append(c);
+            if (changesAsString.length() > 0) { changesAsString.append("\n  "); }
+            changesAsString.append(c.prettyPrint(valuePrinter));
         }
-        return super.fieldsToString() + addEnumField("entryChanges", changesAsString);
+        return super.fieldsToString(valuePrinter) + " changes:\n  " + changesAsString;
     }
 
     @Override

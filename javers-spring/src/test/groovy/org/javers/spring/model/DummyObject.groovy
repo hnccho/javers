@@ -1,14 +1,12 @@
 package org.javers.spring.model
 
-import javax.persistence.Entity
-import javax.persistence.Id
-import javax.persistence.Table;
+import org.javers.core.metamodel.annotation.Id
+import org.springframework.data.mongodb.core.mapping.Document
 
 /**
  * Created by gessnerfl on 21.02.15.
  */
-@Entity
-@Table(name = "dummy_object")
+@Document
 class DummyObject {
     @Id
     String id

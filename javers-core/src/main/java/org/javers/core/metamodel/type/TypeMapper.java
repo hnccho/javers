@@ -53,9 +53,6 @@ public class TypeMapper {
             registerPrimitiveType(primitiveOrBox);
         }
 
-        //String & Enum
-        registerPrimitiveType(String.class);
-        registerPrimitiveType(CharSequence.class);
         registerPrimitiveType(Enum.class);
 
         //array
@@ -83,7 +80,7 @@ public class TypeMapper {
     }
 
     /**
-     * for change appenders
+     * only for change appenders
      */
     public MapContentType getMapContentType(ContainerType containerType){
         JaversType keyType = getJaversType(Integer.class);
@@ -92,12 +89,53 @@ public class TypeMapper {
     }
 
     /**
-     * returns mapped type or spawns new one from prototype
-     * or infers new one using default mapping
+     * is Set, List or Array of ManagedClasses
+     */
+    public boolean isContainerOfManagedTypes(JaversType javersType){
+        if (! (javersType instanceof ContainerType)) {
+            return false;
+        }
+
+        return getJaversType(((ContainerType)javersType).getItemType()) instanceof ManagedType;
+    }
+
+    /**
+     * is Map (or Multimap) with ManagedClass on Key or Value position
+     */
+    public boolean isKeyValueTypeWithManagedTypes(JaversType enumerableType) {
+        if (enumerableType instanceof KeyValueType){
+            KeyValueType mapType = (KeyValueType)enumerableType;
+
+            JaversType keyType = getJaversType(mapType.getKeyType());
+            JaversType valueType = getJaversType(mapType.getValueType());
+
+            return keyType instanceof ManagedType || valueType instanceof ManagedType;
+        } else{
+            return false;
+        }
+    }
+
+    /**
+     * Returns mapped type, spawns a new one from a prototype,
+     * or infers a new one using default mapping.
      */
     public JaversType getJaversType(Type javaType) {
         argumentIsNotNull(javaType);
         return state.getJaversType(javaType);
+    }
+
+    public ClassType getJaversClassType(Type javaType) {
+        argumentIsNotNull(javaType);
+        JaversType jType = getJaversType(javaType);
+
+        if (jType instanceof ClassType) {
+            return (ClassType) jType;
+        }
+
+        throw new JaversException(JaversExceptionCode.CLASS_MAPPING_ERROR,
+                    javaType,
+                    jType.getClass().getSimpleName(),
+                    ClassType.class.getSimpleName());
     }
 
     /**
@@ -174,7 +212,7 @@ public class TypeMapper {
     }
 
     public void registerClientsClass(ClientsClassDefinition def) {
-        state.computeIfAbsent(def);
+        state.register(def);
     }
 
     public void registerValueType(Class<?> valueCLass) {

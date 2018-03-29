@@ -1,15 +1,14 @@
 package org.javers.core.metamodel.type;
 
-import java.util.Optional;
 import org.javers.common.exception.JaversException;
 import org.javers.common.exception.JaversExceptionCode;
 import org.javers.common.string.PrettyPrintBuilder;
 import org.javers.common.string.ToStringBuilder;
 import org.javers.common.validation.Validate;
 import org.javers.core.metamodel.object.InstanceId;
-import org.javers.core.metamodel.property.Property;
 
 import java.lang.reflect.Type;
+import java.util.Optional;
 
 /**
  * Entity class in client's domain model.
@@ -35,21 +34,23 @@ import java.lang.reflect.Type;
  * @author bartosz walacik
  */
 public class EntityType extends ManagedType {
-    private final Property idProperty;
+    private final JaversProperty idProperty;
 
-    EntityType(ManagedClass entity, Property idProperty, Optional<String> typeName) {
+    EntityType(ManagedClass entity, JaversProperty idProperty, Optional<String> typeName) {
         super(entity, typeName);
         Validate.argumentIsNotNull(idProperty);
         this.idProperty = idProperty;
     }
 
-    EntityType(ManagedClass entity, Property idProperty) {
-        this(entity, idProperty, Optional.<String>empty());
+    EntityType(ManagedClass entity, JaversProperty idProperty) {
+        this(entity, idProperty, Optional.empty());
     }
 
     @Override
     EntityType spawn(ManagedClass managedClass, Optional<String> typeName) {
-        return new EntityType(managedClass, idProperty, typeName);
+        //when spawning from prototype, prototype.idProperty and child.idProperty are different objects
+        //with (possibly) different return types, so we need to update Id pointer
+        return new EntityType(managedClass, managedClass.getProperty(idProperty.getName()), typeName);
     }
 
     public Type getIdPropertyGenericType() {
@@ -68,8 +69,20 @@ public class EntityType extends ManagedType {
         return super.prettyPrintBuilder().addField("idProperty", getIdProperty().getName());
     }
 
-    public Property getIdProperty() {
+    public JaversProperty getIdProperty() {
         return idProperty;
+    }
+
+    /**
+     * @throws JaversException ENTITY_INSTANCE_WITH_NULL_ID
+     * @throws JaversException NOT_INSTANCE_OF
+     */
+    public InstanceId createIdFromInstance(Object instance) {
+        return createIdFromLocalId(getIdOf(instance));
+    }
+
+    public InstanceId createIdFromLocalId(Object localId) {
+        return new InstanceId(getName(), localId, localIdAsString(localId));
     }
 
     /**
@@ -78,10 +91,10 @@ public class EntityType extends ManagedType {
      * @throws JaversException ENTITY_INSTANCE_WITH_NULL_ID
      * @throws JaversException NOT_INSTANCE_OF
      */
-    public Object getIdOf(Object instance) {
+    private Object getIdOf(Object instance) {
         Validate.argumentIsNotNull(instance);
 
-        if (!getBaseJavaClass().isInstance(instance)) {
+        if (!isInstance(instance)) {
             throw new JaversException(JaversExceptionCode.NOT_INSTANCE_OF, getName(), instance.getClass().getName());
         }
 
@@ -90,6 +103,16 @@ public class EntityType extends ManagedType {
             throw new JaversException(JaversExceptionCode.ENTITY_INSTANCE_WITH_NULL_ID, getName(), getIdProperty().getName());
         }
         return cdoId;
+    }
+
+    private String localIdAsString(Object localId) {
+        if (getIdProperty().getType() instanceof EntityType) {
+            EntityType idPropertyType = getIdProperty().getType();
+            return idPropertyType.localIdAsString(idPropertyType.getIdOf(localId));
+        }
+
+        PrimitiveOrValueType idPropertyType = getIdProperty().getType();
+        return idPropertyType.smartToString(localId);
     }
 
     @Override

@@ -3,21 +3,29 @@ package org.javers.core
 import groovy.json.JsonSlurper
 import org.javers.core.diff.AbstractDiffTest
 import org.javers.core.diff.DiffAssert
+import org.javers.core.diff.ListCompareAlgorithm
 import org.javers.core.diff.changetype.NewObject
 import org.javers.core.diff.changetype.PropertyChange
 import org.javers.core.diff.changetype.ReferenceChange
 import org.javers.core.diff.changetype.ValueChange
+import org.javers.core.diff.changetype.container.ListChange
+import org.javers.core.diff.changetype.container.ValueAdded
 import org.javers.core.examples.model.Person
 import org.javers.core.json.DummyPointJsonTypeAdapter
 import org.javers.core.json.DummyPointNativeTypeAdapter
+import org.javers.core.metamodel.annotation.DiffInclude
 import org.javers.core.metamodel.annotation.Id
 import org.javers.core.metamodel.property.Property
 import org.javers.core.model.*
 import spock.lang.Unroll
 
+import javax.persistence.EmbeddedId
+
 import static org.javers.core.JaversBuilder.javers
 import static org.javers.core.MappingStyle.BEAN
 import static org.javers.core.MappingStyle.FIELD
+import static org.javers.core.metamodel.clazz.EntityDefinitionBuilder.entityDefinition
+import static org.javers.core.metamodel.clazz.ValueObjectDefinitionBuilder.valueObjectDefinition
 import static org.javers.core.model.DummyUser.Sex.FEMALE
 import static org.javers.core.model.DummyUser.Sex.MALE
 import static org.javers.core.model.DummyUser.dummyUser
@@ -28,6 +36,34 @@ import static org.javers.repository.jql.InstanceIdDTO.instanceId
  * @author bartosz walacik
  */
 class JaversDiffE2ETest extends AbstractDiffTest {
+
+    class PropsClass {
+        @DiffInclude int id
+        int a
+        int b
+    }
+
+    @Unroll
+    def "should ignore all props of #classType which are not in the 'included' list of properties"(){
+      given:
+      def javers = JaversBuilder.javers().registerType(definition).build()
+
+      when:
+      def left =  new PropsClass(id:1, a:2, b:3)
+      def right = new PropsClass(id:1, a:4, b:6)
+      def diff = javers.compare(left, right)
+
+      then:
+      !diff.changes.size()
+
+      where:
+      definition << [entityDefinition(PropsClass)
+                             .withIdPropertyName("id").build(),
+                     valueObjectDefinition(PropsClass)
+                             .withIncludedProperties(["id"]).build()
+      ]
+      classType << ["EntityType", "ValueObjectType"]
+    }
 
     def "should extract Property from PropertyChange"(){
       given:
@@ -44,7 +80,7 @@ class JaversDiffE2ETest extends AbstractDiffTest {
       !property.looksLikeId()
     }
 
-    def "should compare objects with @EmbeddedId using Id reflectiveToString() to match instances"(){
+    def "should use reflectiveToString() to build InstanceId"(){
         given:
         def javers = JaversTestBuilder.newInstance()
         def left  = new DummyEntityWithEmbeddedId(point: new DummyPoint(1,2), someVal: 5)
@@ -55,6 +91,56 @@ class JaversDiffE2ETest extends AbstractDiffTest {
 
         then:
         DiffAssert.assertThat(diff).hasChanges(1).hasValueChangeAt("someVal",5,6)
+
+        diff.changes[0].affectedGlobalId.value().endsWith("DummyEntityWithEmbeddedId/1,2")
+    }
+
+    class DummyCompositePoint {
+        @EmbeddedId DummyPoint dummyPoint
+        int value
+    }
+
+    def "should use custom toString function when provided for building InstanceId"(){
+        given:
+        def javers = JaversBuilder.javers().registerValueWithCustomToString(DummyPoint, {x -> x.getStringId()}).build()
+        def left  = new DummyCompositePoint(dummyPoint: new DummyPoint(1,2), value:5)
+        def right = new DummyCompositePoint(dummyPoint: new DummyPoint(1,2), value:6)
+
+        when:
+        def diff = javers.compare(left,right)
+
+        then:
+        DiffAssert.assertThat(diff).hasChanges(1).hasValueChangeAt("value",5,6)
+        diff.changes.get(0).affectedGlobalId.value() == DummyCompositePoint.class.name+"/(1,2)"
+    }
+
+    class DummyWithEntityId {
+        @Id EntityAsId entityAsId
+        int value
+    }
+
+    class EntityAsId {
+        @Id
+        int id
+        int value
+    }
+
+    def "should use nested Entity Id value as Id of parent Entity"(){
+        given:
+        def javers = javers().build()
+        def left  = new DummyWithEntityId(entityAsId: new EntityAsId(id: 1, value:5), value:5)
+        def right = new DummyWithEntityId(entityAsId: new EntityAsId(id: 1, value:5), value:6)
+
+        when:
+        def diff = javers.compare(left,right)
+
+        then:
+
+        println javers.getTypeMapping(DummyWithEntityId).prettyPrint()
+        println javers.getTypeMapping(EntityAsId).prettyPrint()
+
+        DiffAssert.assertThat(diff).hasChanges(1).hasValueChangeAt("value",5,6)
+        diff.changes[0].affectedGlobalId.value() == DummyWithEntityId.name+"/1"
     }
 
     def "should create NewObject for all nodes in initial diff"() {
@@ -306,14 +392,29 @@ class JaversDiffE2ETest extends AbstractDiffTest {
         def right = new DummyIgnoredPropertiesType(name:"bob", age: 16, propertyThatShouldBeIgnored: 2, anotherIgnored: 2)
 
         when:
-
-        println javers.getTypeMapping(DummyIgnoredPropertiesType).prettyPrint()
-
         def diff = javers.compare(left, right)
 
         then:
         diff.changes.size() == 1
         diff.changes[0].propertyName == "age"
+    }
+
+    def "should compare Lists as Sets when ListCompareAlgorithm.SET is enabled"(){
+      given:
+      def javers = javers().withListCompareAlgorithm(ListCompareAlgorithm.AS_SET).build()
+      def left =  new DummyUser(name:"bob", stringList: ['z', 'a', 'b'])
+      def right = new DummyUser(name:"bob", stringList: ['cc', 'b', 'z', 'a'])
+
+      when:
+      def diff = javers.compare(left, right)
+
+      then:
+      diff.changes.size() == 1
+      def change = diff.changes[0]
+      change instanceof ListChange
+      change.changes.size() == 1
+      change.changes[0] instanceof ValueAdded
+      change.changes[0].addedValue == 'cc'
     }
 
     class SetValueObject {

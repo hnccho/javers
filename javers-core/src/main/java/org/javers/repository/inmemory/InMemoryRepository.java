@@ -1,6 +1,7 @@
 package org.javers.repository.inmemory;
 
 import org.javers.common.collections.Lists;
+
 import java.util.Optional;
 import org.javers.common.validation.Validate;
 import org.javers.core.commit.Commit;
@@ -14,15 +15,11 @@ import org.javers.core.metamodel.type.EntityType;
 import org.javers.core.metamodel.type.ManagedType;
 import org.javers.repository.api.JaversRepository;
 import org.javers.repository.api.QueryParams;
-import org.javers.repository.api.QueryParamsBuilder;
 import org.javers.repository.api.SnapshotIdentifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-
-import static java.util.Collections.unmodifiableList;
 
 /**
  * Fake impl of JaversRepository
@@ -115,18 +112,15 @@ public class InMemoryRepository implements JaversRepository {
         return child.getOwnerId().getTypeName().equals(parent.getName());
     }
 
-    private QueryParams getQueryParamsWithIncreasedLimit(QueryParams queryParams) {
-        return QueryParamsBuilder.initializeWith(queryParams)
-            .limit(queryParams.limit() * 10)
-            .build();
-    }
-
     private List<CdoSnapshot> applyQueryParams(List<CdoSnapshot> snapshots, final QueryParams queryParams){
-        if (queryParams.commitId().isPresent()) {
-            snapshots = filterSnapshotsByCommitId(snapshots, queryParams.commitId().get());
+        if (queryParams.commitIds().size() > 0) {
+            snapshots = filterSnapshotsByCommitIds(snapshots, queryParams.commitIds());
+        }
+        if (queryParams.toCommitId().isPresent()) {
+            snapshots = filterSnapshotsByToCommitId(snapshots, queryParams.toCommitId().get());
         }
         if (queryParams.version().isPresent()) {
-            snapshots = filterSnapshotsByVersion(snapshots, queryParams.version().get());
+            snapshots = Lists.positiveFilter(snapshots, snapshot -> snapshot.getVersion() == queryParams.version().get());
         }
         if (queryParams.author().isPresent()) {
             snapshots = filterSnapshotsByAuthor(snapshots, queryParams.author().get());
@@ -137,16 +131,19 @@ public class InMemoryRepository implements JaversRepository {
         if (queryParams.changedProperty().isPresent()){
             snapshots = filterByPropertyName(snapshots, queryParams.changedProperty().get());
         }
+        if (queryParams.snapshotType().isPresent()){
+            snapshots = Lists.positiveFilter(snapshots, snapshot -> snapshot.getType() == queryParams.snapshotType().get());
+        }
         snapshots = filterSnapshotsByCommitProperties(snapshots, queryParams.commitProperties());
         return trimResultsToRequestedSlice(snapshots, queryParams.skip(), queryParams.limit());
     }
 
-    private List<CdoSnapshot> filterSnapshotsByCommitId(List<CdoSnapshot> snapshots, final CommitId commitId) {
-        return Lists.positiveFilter(snapshots, snapshot -> commitId.equals(snapshot.getCommitId()));
+    private List<CdoSnapshot> filterSnapshotsByToCommitId(List<CdoSnapshot> snapshots, CommitId commitId) {
+        return Lists.positiveFilter(snapshots, snapshot -> snapshot.getCommitMetadata().getId().isBeforeOrEqual(commitId));
     }
 
-    private List<CdoSnapshot> filterSnapshotsByVersion(List<CdoSnapshot> snapshots, final Long version) {
-        return Lists.positiveFilter(snapshots, snapshot -> version == snapshot.getVersion());
+    private List<CdoSnapshot> filterSnapshotsByCommitIds(List<CdoSnapshot> snapshots, final Set<CommitId> commitIds) {
+        return Lists.positiveFilter(snapshots, snapshot -> commitIds.contains(snapshot.getCommitId()));
     }
 
     private List<CdoSnapshot> filterSnapshotsByAuthor(List<CdoSnapshot> snapshots, final String author) {
@@ -170,7 +167,7 @@ public class InMemoryRepository implements JaversRepository {
     private List<CdoSnapshot> trimResultsToRequestedSlice(List<CdoSnapshot> snapshots, int from, int size) {
         int fromIndex = Math.min(from, snapshots.size());
         int toIndex = Math.min(from + size, snapshots.size());
-        return snapshots.subList(fromIndex, toIndex);
+        return new ArrayList<>(snapshots.subList(fromIndex, toIndex));
     }
 
     @Override
@@ -189,7 +186,7 @@ public class InMemoryRepository implements JaversRepository {
     public List<CdoSnapshot> getSnapshots(QueryParams queryParams) {
         Validate.argumentIsNotNull(queryParams);
 
-        return unmodifiableList(applyQueryParams(getAll(), queryParams));
+        return applyQueryParams(getAll(), queryParams);
     }
 
     @Override
@@ -235,12 +232,7 @@ public class InMemoryRepository implements JaversRepository {
             all.addAll(snapshotsList);
         }
 
-        Collections.sort(all, new Comparator<CdoSnapshot>() {
-            @Override
-            public int compare(CdoSnapshot o1, CdoSnapshot o2) {
-            return o2.getCommitId().compareTo(o1.getCommitId());
-            }
-        });
+        Collections.sort(all, (o1, o2) -> o2.getCommitId().compareTo(o1.getCommitId()));
         return all;
     }
 

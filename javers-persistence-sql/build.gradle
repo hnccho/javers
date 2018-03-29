@@ -1,6 +1,6 @@
 dependencies {
     compile project(':javers-core')
-    compile 'org.polyjdbc:polyjdbc:0.6.5'
+    compile "org.polyjdbc:polyjdbc:$polyjdbcVersion"
     compile "com.google.guava:guava:$guavaVersion"
 
     testCompile project(path: ":javers-core", configuration: "testArtifacts")
@@ -14,12 +14,17 @@ dependencies {
     testCompile 'mysql:mysql-connector-java:5.1.36'
     testCompile 'org.codehaus.gpars:gpars:1.2.1'
     testCompile "joda-time:joda-time:$jodaVersion"
+    testCompile group: 'com.microsoft.sqlserver', name: 'mssql-jdbc', version: '6.1.0.jre8'
 
 }
 
 task integrationTest(type: Test) {
     filter {
         includeTestsMatching 'org.javers.repository.sql.integration.opendatabases.*'
+    }
+    testLogging {
+        exceptionFormat = 'full'
+        events 'failed', 'passed'
     }
 }
 

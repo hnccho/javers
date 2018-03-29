@@ -1,10 +1,8 @@
 package org.javers.core.metamodel.property;
 
-import org.javers.common.collections.Sets;
 import org.javers.common.exception.JaversException;
 import org.javers.common.exception.JaversExceptionCode;
 import org.javers.common.reflection.JaversMember;
-
 import java.lang.reflect.Type;
 import java.util.Optional;
 
@@ -20,19 +18,27 @@ public class Property {
 
     private transient final JaversMember member;
     private transient final boolean hasTransientAnn;
+    private transient final boolean hasIncludedAnn;
     private transient final boolean hasShallowReferenceAnn;
-    private String name;
+    private final String name;
+    private final String originalName;
 
-    public Property(JaversMember member, boolean hasTransientAnn, boolean hasShallowReferenceAnn, Optional<String> name){
+    public Property(JaversMember member, boolean hasTransientAnn, boolean hasShallowReferenceAnn, Optional<String> name, boolean hasIncludedAnn){
         argumentIsNotNull(member);
         this.member = member;
         this.hasTransientAnn = hasTransientAnn;
         this.hasShallowReferenceAnn = hasShallowReferenceAnn;
-        this.name = name.orElse(member.propertyName());
+        this.originalName = member.propertyName();
+        this.name = name.orElse(originalName);
+        this.hasIncludedAnn = hasIncludedAnn;
     }
 
-    public Property(JaversMember member, boolean hasTransientAnn) {
-        this(member, hasTransientAnn, false, Optional.empty());
+    public Property(JaversMember member, boolean hasTransientAnn, boolean hasShallowReferenceAnn, String name, boolean hasIncludedAnn){
+        this(member, hasTransientAnn, hasShallowReferenceAnn, Optional.of(name), hasIncludedAnn);
+    }
+
+    public Property(JaversMember member) {
+        this(member, false, false, Optional.empty(), false);
     }
 
     public Type getGenericType() {
@@ -50,7 +56,7 @@ public class Property {
      * true if property looks like identifier of an Entity, for example has @Id annotation
      */
     public boolean looksLikeId() {
-        return member.findFirst(Sets.asSet(ID_ANN, EMBEDDED_ID_ANN)).isPresent();
+        return member.looksLikeId();
     }
 
     /**
@@ -62,10 +68,29 @@ public class Property {
      */
     public Object get(Object target) {
         try {
-            return  member.invokeEvenIfPrivate(target);
+            return  member.getEvenIfPrivate(target);
         } catch (JaversException e) {
             if (e.getCode() == JaversExceptionCode.MISSING_PROPERTY) {
                 return null;
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * Sets property value, even if private.
+     * <br/>
+     * Swallows JaversException.MISSING_PROPERTY
+     *
+     * @param target invocation target
+     * @param value value to be set
+     */
+    public void set(Object target, Object value) {
+        try {
+            member.setEvenIfPrivate(target, value);
+        } catch (JaversException e) {
+            if (e.getCode() == JaversExceptionCode.MISSING_PROPERTY) {
+                return; //swallowed
             }
             throw e;
         }
@@ -75,12 +100,30 @@ public class Property {
         return get(target) == null;
     }
 
+    /**
+     * Property name used by JaVers, originalName by default, can be changed with @PropertyName.
+     */
     public String getName() {
         return this.name;
     }
 
+    /**
+     * Property name as in Java class
+     */
+    public String getOriginalName() {
+        return originalName;
+    }
+
+    public boolean hasCustomName() {
+        return this.name != this.originalName;
+    }
+
     public boolean hasTransientAnn() {
         return hasTransientAnn;
+    }
+
+    public boolean isHasIncludedAnn() {
+        return hasIncludedAnn;
     }
 
     public boolean hasShallowReferenceAnn() {

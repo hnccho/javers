@@ -8,6 +8,7 @@ import org.javers.core.diff.changetype.container.ContainerElementChange;
 import org.javers.core.diff.changetype.container.ListChange;
 import org.javers.core.metamodel.object.*;
 import org.javers.core.metamodel.property.Property;
+import org.javers.core.metamodel.type.JaversProperty;
 import org.javers.core.metamodel.type.JaversType;
 import org.javers.core.metamodel.type.ListType;
 import org.javers.core.metamodel.type.TypeMapper;
@@ -15,10 +16,8 @@ import org.javers.core.metamodel.type.TypeMapper;
 import java.util.List;
 import java.util.Objects;
 
-import static org.javers.common.collections.Lists.wrapNull;
-
 /**
- * @author kornel kiełczewski
+ * @author kornel kielczewski
  */
 public class LevenshteinListChangeAppender extends CorePropertyChangeAppender<ListChange> {
 
@@ -37,12 +36,17 @@ public class LevenshteinListChangeAppender extends CorePropertyChangeAppender<Li
     }
 
     @Override
-    public ListChange calculateChanges(final NodePair pair, final Property property) {
+    public ListChange calculateChanges(final NodePair pair, final JaversProperty property) {
 
-        final List leftList =  wrapNull( (List) pair.getLeftPropertyValue(property) );
-        final List rightList = wrapNull((List) pair.getRightPropertyValue(property));
+        ListType listType = property.getType();
+        JaversType itemType = typeMapper.getJaversType(listType.getItemType());
+        DehydrateContainerFunction dehydrateFunction = new DehydrateContainerFunction(itemType, globalIdFactory);
+        OwnerContext owner = new PropertyOwnerContext(pair.getGlobalId(), property.getName());
 
-        EqualsFunction equalsFunction = createDehydratingEqualsFunction(pair, property);
+        final List leftList =  (List) listType.map(pair.getLeftPropertyValue(property), dehydrateFunction, owner);
+        final List rightList = (List) listType.map(pair.getRightPropertyValue(property), dehydrateFunction, owner);
+
+        EqualsFunction equalsFunction = (left, right) -> Objects.equals(left, right);
         Backtrack backtrack = new Backtrack(equalsFunction);
         StepsToChanges stepsToChanges = new StepsToChanges(equalsFunction);
 
@@ -51,23 +55,9 @@ public class LevenshteinListChangeAppender extends CorePropertyChangeAppender<Li
 
         ListChange result = getListChange(pair.getGlobalId(), property, changes);
         if (result != null) {
-            ListType listType = typeMapper.getPropertyType(property);
             renderNotParametrizedWarningIfNeeded(listType.getItemType(), "item", "List", property);
         }
         return result;
-    }
-
-    private EqualsFunction createDehydratingEqualsFunction(NodePair pair, Property property){
-        ListType listType = typeMapper.getPropertyType(property);
-        final JaversType listContentType = typeMapper.getJaversType(listType.getItemType());
-        final OwnerContext owner = new PropertyOwnerContext(pair.getGlobalId(), property.getName());
-        return new EqualsFunction() {
-            public boolean nullSafeEquals(Object left, Object right) {
-                Object leftDehydrated = globalIdFactory.dehydrate(left, listContentType, owner);
-                Object rightDehydrated = globalIdFactory.dehydrate(right, listContentType, owner);
-                return Objects.equals(leftDehydrated, rightDehydrated);
-            }
-        };
     }
 
     private ListChange getListChange(final GlobalId affectedCdoId, final Property property,

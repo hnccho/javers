@@ -1,5 +1,6 @@
 package org.javers.core;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.javers.common.exception.JaversException;
 import org.javers.common.validation.Validate;
@@ -21,6 +22,7 @@ import org.javers.repository.api.JaversExtendedRepository;
 import org.javers.repository.jql.GlobalIdDTO;
 import org.javers.repository.jql.JqlQuery;
 import org.javers.repository.jql.QueryRunner;
+import org.javers.shadow.Shadow;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,7 +90,7 @@ class JaversCore implements Javers {
         repository.persist(commit);
         long stop = System.currentTimeMillis();
 
-        logger.info(commit.toString()+", done in "+ (stop-start)+ " millis (factory:{}, persist:{})",(stop_f-start), (stop-stop_f));
+        logger.info(commit.toString()+", done in "+ (stop-start)+ " millis (diff:{}, persist:{})",(stop_f-start), (stop-stop_f));
         return commit;
     }
 
@@ -138,6 +140,11 @@ class JaversCore implements Javers {
     }
 
     @Override
+    public <T> List<Shadow<T>> findShadows(JqlQuery query) {
+        return (List)queryRunner.queryForShadows(query);
+    }
+
+    @Override
     public List<CdoSnapshot> findSnapshots(JqlQuery query){
         return queryRunner.queryForSnapshots(query);
     }
@@ -148,9 +155,15 @@ class JaversCore implements Javers {
     }
 
     @Override
-    public Optional<CdoSnapshot> getLatestSnapshot(Object localId, Class entityClass) {
-        Validate.argumentsAreNotNull(localId, entityClass);
-        return queryRunner.runQueryForLatestSnapshot(instanceId(localId, entityClass));
+    public Optional<CdoSnapshot> getLatestSnapshot(Object localId, Class entity) {
+        Validate.argumentsAreNotNull(localId, entity);
+        return queryRunner.runQueryForLatestSnapshot(instanceId(localId, entity));
+    }
+
+    @Override
+    public Optional<CdoSnapshot> getHistoricalSnapshot(Object localId, Class entity, LocalDateTime effectiveDate) {
+        Validate.argumentsAreNotNull(localId, entity, effectiveDate);
+        return repository.getHistorical(globalIdFactory.createInstanceId(localId, entity), effectiveDate);
     }
 
     @Override

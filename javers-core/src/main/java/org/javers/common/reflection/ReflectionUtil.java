@@ -6,16 +6,19 @@ import org.javers.common.collections.Lists;
 import java.util.*;
 
 import org.javers.common.collections.Primitives;
+import org.javers.common.collections.Sets;
 import org.javers.common.collections.WellKnownValueTypes;
 import org.javers.common.exception.JaversException;
 import org.javers.common.exception.JaversExceptionCode;
 import org.javers.common.validation.Validate;
 import org.javers.core.Javers;
+import org.javers.core.metamodel.property.Property;
 import org.slf4j.Logger;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 
+import static java.util.Collections.unmodifiableSet;
 import static org.slf4j.LoggerFactory.getLogger;
 
 /**
@@ -50,8 +53,8 @@ public class ReflectionUtil {
     public static Object invokeGetter(Object target, String getterName) {
         Validate.argumentsAreNotNull(target, getterName);
         try {
-            Method m = target.getClass().getMethod(getterName, new Class[]{});
-            return m.invoke(target, new Object[]{});
+            Method m = target.getClass().getMethod(getterName);
+            return m.invoke(target);
         }catch (Exception e ) {
             throw new JaversException(e);
         }
@@ -99,22 +102,9 @@ public class ReflectionUtil {
         return result;
     }
 
-    public static List<JaversMethod> findAllPersistentGetters(Class methodSource) {
-        List<JaversMethod> result = new ArrayList<>();
-        for(JaversMethod m : getAllMethods(methodSource)) {
-             if (isPersistentGetter(m.getRawMember())) {
-                 result.add(m);
-             }
-        }
-        return result;
-    }
-
-    /**
-     * @see JaversMethodFactory#getAllMethods()
-     */
-    public static List<JaversMethod> getAllMethods(Class methodSource) {
-        JaversMethodFactory methodFactory = new JaversMethodFactory(methodSource);
-        return methodFactory.getAllMethods();
+    public static List<JaversGetter> getAllGetters(Class methodSource) {
+        JaversGetterFactory getterFactory = new JaversGetterFactory(methodSource);
+        return getterFactory.getAllGetters();
     }
 
     public static List<JaversField> getAllFields(Class<?> methodSource) {
@@ -122,34 +112,10 @@ public class ReflectionUtil {
         return fieldFactory.getAllFields();
     }
 
-    /**
-     * true if method is getter and
-     * <ul>
-     *     <li/>is not abstract
-     *     <li/>is not native
-     * </ul>
-     */
-    public static boolean isPersistentGetter(Method m) {
-        if (!isGetter(m)){
-            return false;
-        }
-
-        return  !Modifier.isStatic(m.getModifiers()) &&
-                !Modifier.isAbstract(m.getModifiers()) &&
-                !Modifier.isNative(m.getModifiers()) ;
-    }
-
-    public static boolean isPersistentField(Field field) {
-
+    private static boolean isPersistentField(Field field) {
         return !Modifier.isTransient(field.getModifiers()) &&
                !Modifier.isStatic(field.getModifiers()) &&
                !field.getName().equals("this$0"); //owner of inner class
-    }
-
-    public static boolean isGetter(Method m) {
-        return (m.getName().startsWith("get") ||
-                m.getName().startsWith("is")) &&
-                m.getParameterTypes().length == 0;
     }
 
     private static boolean isPrivate(Member member){
@@ -170,7 +136,7 @@ public class ReflectionUtil {
 
         return Lists.immutableListOf(((ParameterizedType) javaType).getActualTypeArguments());
     }
-    
+
     public static List<Class<?>> findClasses(Class<? extends Annotation> annotation, String... packages) {
         Validate.argumentsAreNotNull(annotation, packages);
     	List<String> names = new FastClasspathScanner(packages).scan().getNamesOfClassesWithAnnotation(annotation);
@@ -227,49 +193,37 @@ public class ReflectionUtil {
         return false;
     }
 
-    public static int calculateHierarchyDistance(Class<?> clazz, Class<?> parent) {
-        Class<?> current = clazz;
-        int distance = 0;
+    public static List<Type> calculateHierarchyDistance(Class<?> clazz) {
+        List<Type> interfaces = new ArrayList<>();
 
-        //search in class hierarchy
-        while (current != null) {
-            //try class
-            if (parent == current) {
-                return distance;
+        List<Type> parents = new ArrayList<>();
+
+        Class<?> current = clazz;
+        while (current != null && current != Object.class){
+            if (clazz != current) {
+                parents.add(current);
             }
 
-            //try interfaces
-            for (Class<?> interf : current.getInterfaces()) {
-                if (parent == interf) {
-                    return distance + 1;
+            for (Class i : current.getInterfaces()) {
+                if (!interfaces.contains(i)) {
+                    interfaces.add(i);
                 }
             }
 
-            //step up in class hierarchy
             current = current.getSuperclass();
-
-            distance++;
         }
 
-        return Integer.MAX_VALUE;
+        parents.addAll(interfaces);
+
+        return parents;
     }
 
-    public static String reflectiveToString(Object cdoId) {
-        if (cdoId == null){
-            return "";
-        }
-
-        if (cdoId instanceof String) {
-            return (String) cdoId;
-        }
-
-        if (WellKnownValueTypes.isValueType(cdoId) || Primitives.isPrimitiveOrBox(cdoId)){
-            return cdoId.toString();
-        }
+    public static String reflectiveToString(Object obj) {
+        Validate.argumentIsNotNull(obj);
 
         StringBuilder ret = new StringBuilder();
-        for (JaversField f : getAllPersistentFields(cdoId.getClass()) ){
-            Object val = f.invokeEvenIfPrivate(cdoId);
+        for (JaversField f : getAllPersistentFields(obj.getClass()) ){
+            Object val = f.getEvenIfPrivate(obj);
             if (val != null) {
                 ret.append(val.toString());
             }
@@ -277,7 +231,7 @@ public class ReflectionUtil {
         }
 
         if (ret.length() == 0) {
-            return cdoId.toString();
+            return obj.toString();
         }
         else{
             ret.delete(ret.length()-1, ret.length());
@@ -298,9 +252,13 @@ public class ReflectionUtil {
         return (T) ReflectionUtil.invokeGetter(ann, propertyName);
     }
 
-    public static Optional<Annotation> findFirst(AnnotatedElement annotatedElement, Set<String> annotationNames) {
-        return Arrays.stream(annotatedElement.getAnnotations())
-                .filter(a -> annotationNames.contains(a.annotationType().getSimpleName()))
-                .findFirst();
+    public static boolean looksLikeId(Member member) {
+        return getAnnotations(member).stream()
+                .map(ann -> ann.annotationType().getSimpleName())
+                .anyMatch(annName -> annName.equals(Property.ID_ANN) || annName.equals(Property.EMBEDDED_ID_ANN));
+    }
+
+    public static Set<Annotation> getAnnotations(Member member) {
+        return unmodifiableSet(Sets.asSet(((AccessibleObject) member).getAnnotations()));
     }
 }

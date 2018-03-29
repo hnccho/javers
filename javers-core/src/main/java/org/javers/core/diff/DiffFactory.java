@@ -13,17 +13,15 @@ import org.javers.core.graph.LiveGraph;
 import org.javers.core.graph.LiveGraphFactory;
 import org.javers.core.graph.ObjectNode;
 import org.javers.core.metamodel.object.GlobalId;
-import org.javers.core.metamodel.property.Property;
-import org.javers.core.metamodel.type.JaversType;
-import org.javers.core.metamodel.type.PrimitiveType;
-import org.javers.core.metamodel.type.TypeMapper;
-import org.javers.core.metamodel.type.ValueType;
+import org.javers.core.metamodel.type.*;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
 
 import static java.util.Optional.empty;
 import static java.util.Optional.of;
-import static org.javers.core.diff.DiffBuilder.diff;
 
 /**
  * @author Maciej Zasada
@@ -74,7 +72,7 @@ public class DiffFactory {
     public Diff singleTerminal(GlobalId removedId, CommitMetadata commitMetadata){
         Validate.argumentsAreNotNull(removedId, commitMetadata);
 
-        DiffBuilder diff = diff();
+        DiffBuilder diff = new DiffBuilder(javersCoreConfiguration.getPrettyValuePrinter());
         diff.addChange(new ObjectRemoved(removedId, empty(), of(commitMetadata)));
 
         return diff.build();
@@ -105,7 +103,7 @@ public class DiffFactory {
      * Graph scope appender
      */
     private Diff createAndAppendChanges(GraphPair graphPair, Optional<CommitMetadata> commitMetadata) {
-        DiffBuilder diff = diff();
+        DiffBuilder diff = new DiffBuilder(javersCoreConfiguration.getPrettyValuePrinter());
 
         //calculate node scope diff
         for (NodeChangeAppender appender : nodeChangeAppenders) {
@@ -130,21 +128,21 @@ public class DiffFactory {
 
     /* Node scope appender */
     private void appendPropertyChanges(DiffBuilder diff, NodePair pair, final Optional<CommitMetadata> commitMetadata) {
-        List<Property> nodeProperties = pair.getProperties();
-        for (Property property : nodeProperties) {
+        List<JaversProperty> nodeProperties = pair.getProperties();
+        for (JaversProperty property : nodeProperties) {
 
             //optimization, skip all appenders if null on both sides
             if (pair.isNullOnBothSides(property)) {
                 continue;
             }
 
-            JaversType javersType = typeMapper.getPropertyType(property);
+            JaversType javersType = property.getType();
 
             appendChanges(diff, pair, property, javersType, commitMetadata);
         }
     }
 
-    private void appendChanges(DiffBuilder diff, NodePair pair, Property property, JaversType javersType, Optional<CommitMetadata> commitMetadata) {
+    private void appendChanges(DiffBuilder diff, NodePair pair, JaversProperty property, JaversType javersType, Optional<CommitMetadata> commitMetadata) {
         for (PropertyChangeAppender appender : propertyChangeAppender) {
             if (! appender.supports(javersType)){
                 continue;

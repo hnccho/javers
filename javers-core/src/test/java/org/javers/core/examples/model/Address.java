@@ -5,9 +5,14 @@ package org.javers.core.examples.model;
  */
 public class Address {
     private String city;
+
     private String street;
 
-    public Address(){
+    public Address() {
+    }
+
+    public Address(String city) {
+        this.city = city;
     }
 
     public Address(String city, String street) {

@@ -1,34 +1,43 @@
 package org.javers.core.examples.model;
 
 import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.javers.common.collections.Sets;
+import org.javers.core.metamodel.annotation.TypeName;
 
 import javax.persistence.Id;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.time.ZonedDateTime;
+import java.util.*;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * @author bartosz walacik
  */
+@TypeName("Employee")
 public class Employee {
 
     @Id
     private String name;
 
-    private String position;
+    private Position position;
 
     private int salary;
+
+    private int age;
 
     private Employee boss;
 
     private List<Employee> subordinates = new ArrayList<>();
 
     private Address primaryAddress;
+
     private Address postalAddress;
 
-    private int age;
+    private Set<String> skills;
+
+    private Map<Integer, String> performance;
+
+    private ZonedDateTime lastPromotionDate;
 
     public Employee() {
     }
@@ -48,7 +57,7 @@ public class Employee {
         checkNotNull(position);
         this.name = name;
         this.salary = salary;
-        this.position = position;
+        this.position = Position.valueOf(position);
     }
 
     public Employee addSubordinate(Employee employee) {
@@ -66,11 +75,15 @@ public class Employee {
         return this;
     }
 
+    public ZonedDateTime getLastPromotionDate() {
+        return lastPromotionDate;
+    }
+
     public String getName() {
         return name;
     }
 
-    public String getPosition() {
+    public Position getPosition() {
         return position;
     }
 
@@ -94,12 +107,16 @@ public class Employee {
         return Collections.unmodifiableList(subordinates);
     }
 
-    public void setPosition(String position) {
-        this.position = position;
+    public Set<String> getSkills() {
+        return Collections.unmodifiableSet(this.skills);
     }
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public void setPosition(String position) {
+        this.position = Position.valueOf(position);
     }
 
     public void setSalary(int salary) {
@@ -108,6 +125,30 @@ public class Employee {
 
     public void setAge(int age) {
         this.age = age;
+    }
+
+    public void setBoss(Employee boss) {
+        this.boss = boss;
+    }
+
+    public void setSubordinates(List<Employee> subordinates) {
+        this.subordinates = subordinates;
+    }
+
+    public void setPrimaryAddress(Address primaryAddress) {
+        this.primaryAddress = primaryAddress;
+    }
+
+    public void setPostalAddress(Address postalAddress) {
+        this.postalAddress = postalAddress;
+    }
+
+    public void setSkills(String... skills) {
+        this.skills = Sets.asSet(skills);
+    }
+
+    void setLastPromotionDate(ZonedDateTime lastPromotionDate) {
+        this.lastPromotionDate = lastPromotionDate;
     }
 
     @Override

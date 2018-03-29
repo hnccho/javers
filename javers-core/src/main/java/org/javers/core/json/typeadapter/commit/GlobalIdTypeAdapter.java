@@ -6,37 +6,28 @@ import org.javers.core.json.JsonTypeAdapter;
 import org.javers.core.metamodel.object.*;
 import org.javers.core.metamodel.type.EntityType;
 import org.javers.core.metamodel.type.TypeMapper;
-import org.slf4j.Logger;
 
 import java.util.List;
-
-import static org.slf4j.LoggerFactory.getLogger;
 
 /**
  * @author bartosz walacik
  */
 class GlobalIdTypeAdapter implements JsonTypeAdapter<GlobalId> {
-    private static final Logger logger = getLogger(GlobalIdTypeAdapter.class);
-
     static final String ENTITY_FIELD = "entity";
     static final String CDO_ID_FIELD = "cdoId";
     static final String OWNER_ID_FIELD = "ownerId";
     static final String VALUE_OBJECT_FIELD = "valueObject";
     static final String FRAGMENT_FIELD = "fragment";
 
-    private final GlobalIdFactory globalIdFactory;
     private final TypeMapper typeMapper;
 
-    public GlobalIdTypeAdapter(GlobalIdFactory globalIdFactory, TypeMapper typeMapper) {
-        this.globalIdFactory = globalIdFactory;
+    public GlobalIdTypeAdapter(TypeMapper typeMapper) {
         this.typeMapper = typeMapper;
     }
 
     @Override
     public GlobalId fromJson(JsonElement json, JsonDeserializationContext context) {
         JsonObject jsonObject = (JsonObject) json;
-
-        logger.debug("deserializing "+json);
 
         if (jsonObject.get(ENTITY_FIELD) != null) {
             return parseInstanceId(jsonObject, context);
@@ -67,7 +58,7 @@ class GlobalIdTypeAdapter implements JsonTypeAdapter<GlobalId> {
         JsonElement cdoIdElement = jsonObject.get(CDO_ID_FIELD);
         Object cdoId = context.deserialize(cdoIdElement, entity.getIdProperty().getGenericType());
 
-        return globalIdFactory.createInstanceId(cdoId, entity);
+        return entity.createIdFromLocalId(cdoId);
     }
 
     @Override
@@ -76,7 +67,6 @@ class GlobalIdTypeAdapter implements JsonTypeAdapter<GlobalId> {
             return JsonNull.INSTANCE;
         }
 
-        logger.debug("serializing "+globalId.getClass().getSimpleName()+":"+globalId);
         JsonObject jsonObject = new JsonObject();
 
         //managedClass
